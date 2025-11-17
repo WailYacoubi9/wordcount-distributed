@@ -30,6 +30,7 @@ build/
 count*.txt
 total.txt
 part*.txt
+test_*.txt
 wordcount
 *.log
 
