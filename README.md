@@ -2,6 +2,20 @@
 
 A production-ready distributed word counting system using **Java RMI** on **Grid5000** infrastructure with support for both **mono-site** and **multi-site** deployments.
 
+---
+
+## 📖 **→ [Quick Start Guide](QUICK_START_GUIDE.md) ← START HERE!**
+
+**New to the project?** Check out our comprehensive [**QUICK_START_GUIDE.md**](QUICK_START_GUIDE.md) for:
+- 🏠 **Local testing** (clone & test on your laptop)
+- 🔑 **SSH key setup** for Grid5000
+- 🌐 **Grid5000 mono-site** testing (step-by-step)
+- 🗺️ **Grid5000 multi-site** testing (with oargridsub)
+- 🛠️ **Troubleshooting** common issues
+- 📊 **Expected outputs** for each scenario
+
+---
+
 ## ✨ Features
 
 - ✅ **Makefile parser** with dependency resolution and parallel execution
