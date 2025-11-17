@@ -27,14 +27,27 @@ public class Configuration {
     }
 
     /**
-     * Builds the RMI URL for a given hostname.
+     * Builds the RMI URL for a given hostname using the default port.
      * @param hostname The hostname of the worker
      * @return The complete RMI URL
      */
     public static String buildRmiUrl(String hostname) {
+        return buildRmiUrl(hostname, RMI_REGISTRY_PORT);
+    }
+
+    /**
+     * Builds the RMI URL for a given hostname and port.
+     * @param hostname The hostname of the worker
+     * @param port The RMI registry port
+     * @return The complete RMI URL
+     */
+    public static String buildRmiUrl(String hostname, int port) {
         if (hostname == null || hostname.trim().isEmpty()) {
             throw new IllegalArgumentException("Hostname cannot be null or empty");
         }
-        return String.format("rmi://%s:%d/%s", hostname, RMI_REGISTRY_PORT, RMI_SERVICE_NAME);
+        if (port < 1024 || port > 65535) {
+            throw new IllegalArgumentException("Port must be between 1024 and 65535");
+        }
+        return String.format("rmi://%s:%d/%s", hostname, port, RMI_SERVICE_NAME);
     }
 }

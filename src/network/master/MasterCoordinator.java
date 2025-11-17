@@ -16,11 +16,12 @@ public class MasterCoordinator {
      * Simplified version - assumes all input files are pre-deployed to workers.
      * @param command The command to execute
      * @param workerHost The worker hostname
+     * @param workerPort The worker RMI port
      * @param masterHostname The master hostname
      * @param taskName The name of the task (used for result retrieval)
      * @return Exit code from the command
      */
-    public static int executeOnWorker(String command, String workerHost, String masterHostname, String taskName) {
+    public static int executeOnWorker(String command, String workerHost, int workerPort, String masterHostname, String taskName) {
         if (command == null || command.trim().isEmpty()) {
             System.err.println("[MASTER] Invalid command");
             return -1;
@@ -32,11 +33,11 @@ public class MasterCoordinator {
         }
 
         try {
-            System.out.println("[MASTER] Connecting to worker: " + workerHost);
-            String workerUrl = Configuration.buildRmiUrl(workerHost);
+            System.out.println("[MASTER] Connecting to worker: " + workerHost + ":" + workerPort);
+            String workerUrl = Configuration.buildRmiUrl(workerHost, workerPort);
             WorkerInterface worker = (WorkerInterface) Naming.lookup(workerUrl);
 
-            System.out.println("[MASTER] Executing on " + workerHost + ": " + command);
+            System.out.println("[MASTER] Executing on " + workerHost + ":" + workerPort + ": " + command);
             int exitCode = worker.executeCommand(command);
 
             if (exitCode == 0 && taskName != null) {

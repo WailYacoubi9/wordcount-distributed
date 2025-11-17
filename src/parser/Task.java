@@ -182,17 +182,18 @@ public class Task {
         }
 
         try {
-            System.out.println("[TASK " + taskName + "] Assigned to worker: " + availableWorker.hostname);
+            System.out.println("[TASK " + taskName + "] Assigned to worker: " + availableWorker.hostname + ":" + availableWorker.port);
 
             int exitCode = MasterCoordinator.executeOnWorker(
                 command,
                 availableWorker.hostname,
+                availableWorker.port,
                 clusterManager.getMasterNode().hostname,
                 this.taskName
             );
 
             if (exitCode == 0) {
-                System.out.println("[TASK " + taskName + "] ✅ Completed successfully on " + availableWorker.hostname);
+                System.out.println("[TASK " + taskName + "] ✅ Completed successfully on " + availableWorker.hostname + ":" + availableWorker.port);
                 return true;
             } else {
                 System.err.println("[TASK " + taskName + "] ❌ Failed with exit code: " + exitCode);

@@ -30,13 +30,12 @@ public class ClusterManager {
         List<ComputeNode> tempNodes = new ArrayList<>();
         System.out.println("[CLUSTER] Initializing cluster with " + hostnames.length + " nodes:");
 
-        for (String hostname : hostnames) {
-            hostname = hostname.trim();
-            if (!hostname.isEmpty()) {
-                validateHostname(hostname);
-                ComputeNode node = new ComputeNode(hostname);
+        for (String nodeSpec : hostnames) {
+            nodeSpec = nodeSpec.trim();
+            if (!nodeSpec.isEmpty()) {
+                ComputeNode node = parseNodeSpec(nodeSpec);
                 tempNodes.add(node);
-                System.out.println("[CLUSTER]   - " + hostname);
+                System.out.println("[CLUSTER]   - " + node.hostname + ":" + node.port);
             }
         }
 
@@ -115,6 +114,38 @@ public class ClusterManager {
             System.out.println(statusSymbol + " " + node.hostname + " - " + node.getStatus());
         }
         System.out.println("========================\n");
+    }
+
+    /**
+     * Parses a node specification in the format "hostname" or "hostname:port".
+     * @param nodeSpec The node specification string
+     * @return A ComputeNode instance
+     * @throws IllegalArgumentException if the spec is invalid
+     */
+    private ComputeNode parseNodeSpec(String nodeSpec) {
+        if (nodeSpec == null || nodeSpec.isEmpty()) {
+            throw new IllegalArgumentException("Node specification cannot be null or empty");
+        }
+
+        String[] parts = nodeSpec.split(":");
+        String hostname = parts[0].trim();
+
+        validateHostname(hostname);
+
+        if (parts.length == 1) {
+            // No port specified, use default
+            return new ComputeNode(hostname);
+        } else if (parts.length == 2) {
+            // Port specified
+            try {
+                int port = Integer.parseInt(parts[1].trim());
+                return new ComputeNode(hostname, port);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid port number in: " + nodeSpec);
+            }
+        } else {
+            throw new IllegalArgumentException("Invalid node specification format: " + nodeSpec);
+        }
     }
 
     /**
