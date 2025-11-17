@@ -1,7 +1,7 @@
 # Makefile pour le comptage de mots distribué
 
 total.txt: count1.txt count2.txt count3.txt count4.txt count5.txt
-	cat count1.txt count2.txt count3.txt count4.txt count5.txt | awk '{sum += $$1} END {print sum}' > total.txt
+	cat count1.txt count2.txt count3.txt count4.txt count5.txt | awk '{sum += $1} END {print sum}' > total.txt
 
 count1.txt: part1.txt wordcount
 	./wordcount part1.txt > count1.txt
@@ -20,6 +20,3 @@ count5.txt: part5.txt wordcount
 
 wordcount: test/wordcount.c
 	gcc -o wordcount test/wordcount.c
-
-clean:
-	rm -f count*.txt total.txt wordcount

@@ -2,10 +2,13 @@ package scheduler;
 
 import parser.MakefileParser;
 import parser.Task;
+import parser.TaskStatus;
 import cluster.ClusterManager;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Main entry point for the distributed word count system.
@@ -41,10 +44,23 @@ public class Main {
 
             parser.printGraph();
 
-            // Inject cluster manager into all tasks
+            // Inject cluster manager into all tasks and mark file-only tasks as finished
             System.out.println("[MAIN] Configuring tasks with cluster manager...");
-            for (Task task : graph.keySet()) {
+
+            // First, collect all tasks (including those only in dependency lists)
+            Set<Task> allTasks = new HashSet<>(graph.keySet());
+            for (List<Task> deps : graph.values()) {
+                allTasks.addAll(deps);
+            }
+
+            // Configure all tasks
+            for (Task task : allTasks) {
                 task.setClusterManager(clusterManager);
+                // Tasks with no commands represent files that already exist
+                if (task.getCommands().isEmpty()) {
+                    task.setStatus(TaskStatus.FINISHED);
+                    System.out.println("[MAIN] File dependency " + task.getTaskName() + " marked as FINISHED");
+                }
             }
 
             // Create and configure scheduler
