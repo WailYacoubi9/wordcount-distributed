@@ -563,6 +563,83 @@ for node in $(cat $OAR_NODEFILE); do
 done
 ```
 
+### Problem: Windows Line Ending Errors (CRLF vs LF)
+
+**Error symptoms:**
+```
+test_local.sh: line 4: $'\r': command not found
+: invalid optionine 5: set: -
+test_local.sh: line 14: syntax error near unexpected token `$'{\r''
+```
+
+**Cause:** Shell scripts have Windows line endings (CRLF) instead of Unix line endings (LF).
+
+**Solution 1 - Automatic (Recommended):**
+
+The repository now includes a `.gitattributes` file that automatically handles line endings. To fix your local copy:
+
+```bash
+# Remove all files from Git's index (doesn't delete them)
+git rm --cached -r .
+
+# Re-add all files (Git will normalize line endings)
+git reset --hard
+
+# If the above doesn't work, try:
+git config core.autocrlf false
+git rm --cached -r .
+git reset --hard
+```
+
+**Solution 2 - Manual conversion with dos2unix:**
+
+If you have Git Bash on Windows, use `dos2unix`:
+
+```bash
+# Install dos2unix (if not available)
+# Download from: https://sourceforge.net/projects/dos2unix/
+
+# Convert all shell scripts
+find . -name "*.sh" -exec dos2unix {} \;
+```
+
+**Solution 3 - Manual conversion with sed:**
+
+```bash
+# For Git Bash on Windows
+find . -name "*.sh" -exec sed -i 's/\r$//' {} \;
+```
+
+**Solution 4 - Use WSL (Windows Subsystem for Linux):**
+
+The most reliable solution for Windows users is to use WSL:
+
+```bash
+# In PowerShell (run as Administrator)
+wsl --install
+
+# After WSL is installed, restart and open Ubuntu
+# Clone the repository in WSL:
+cd ~
+git clone https://github.com/WailYacoubi9/wordcount-distributed.git
+cd wordcount-distributed
+
+# Run tests in WSL - scripts will work perfectly
+bash deploy/test_local.sh
+```
+
+**Prevention:**
+
+After fixing line endings, configure Git to prevent future issues:
+
+```bash
+# On Windows, use this setting
+git config --global core.autocrlf true
+
+# This converts CRLF to LF on commit, and LF to CRLF on checkout for text files
+# But .gitattributes overrides this for .sh files to always use LF
+```
+
 ### Problem: "Only 1 site detected" in multi-site script
 
 **This means all nodes are on the same site.**
