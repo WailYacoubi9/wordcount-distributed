@@ -1,78 +1,81 @@
 package network.master;
 
+import config.Configuration;
 import network.worker.WorkerInterface;
-import parser.Task;
-import scheduler.TaskScheduler;
 
 import java.rmi.Naming;
 
+/**
+ * Coordinates task execution on worker nodes via RMI.
+ * Refactored to remove circular dependencies.
+ */
 public class MasterCoordinator {
 
-    public static int executeOnWorker(String[] args, String masterHostname, Task task) {
-        if (args.length < 2) {
-            System.err.println("[MASTER] Invalid arguments");
+    /**
+     * Executes a command on a worker node.
+     * Simplified version - assumes all input files are pre-deployed to workers.
+     * @param command The command to execute
+     * @param workerHost The worker hostname
+     * @param workerPort The worker RMI port
+     * @param masterHostname The master hostname
+     * @param taskName The name of the task (used for result retrieval)
+     * @return Exit code from the command
+     */
+    public static int executeOnWorker(String command, String workerHost, int workerPort, String masterHostname, String taskName) {
+        if (command == null || command.trim().isEmpty()) {
+            System.err.println("[MASTER] Invalid command");
             return -1;
         }
 
-        String command = args[0];
-        String workerHost = args[1];
+        if (workerHost == null || workerHost.trim().isEmpty()) {
+            System.err.println("[MASTER] Invalid worker host");
+            return -1;
+        }
 
         try {
-            System.out.println("[MASTER] Connecting to worker: " + workerHost);
-            String workerUrl = "rmi://" + workerHost + ":3000/WorkerService";
+            System.out.println("[MASTER] Connecting to worker: " + workerHost + ":" + workerPort);
+            String workerUrl = Configuration.buildRmiUrl(workerHost, workerPort);
             WorkerInterface worker = (WorkerInterface) Naming.lookup(workerUrl);
 
-            handleDependencies(task, worker, masterHostname, workerHost);
-
-            System.out.println("[MASTER] Executing on " + workerHost + ": " + command);
+            System.out.println("[MASTER] Executing on " + workerHost + ":" + workerPort + ": " + command);
             int exitCode = worker.executeCommand(command);
 
-            if (exitCode == 0) {
-                retrieveResults(task, workerHost, masterHostname);
+            if (exitCode == 0 && taskName != null) {
+                retrieveResults(taskName, workerHost, masterHostname);
             }
 
             return exitCode;
 
         } catch (Exception e) {
-            System.err.println("[MASTER] Error executing on worker: " + e.getMessage());
+            System.err.println("[MASTER] Error executing on worker " + workerHost + ": " + e.getMessage());
             e.printStackTrace();
             return -1;
         }
     }
 
-    private static void handleDependencies(Task task, WorkerInterface worker, 
-                                          String masterHost, String workerHost) {
+    /**
+     * Retrieves result files from the worker back to master.
+     */
+    private static void retrieveResults(String taskName, String workerHost, String masterHost) {
         try {
-            if (TaskScheduler.graph.get(task) != null) {
-                for (Task dependency : TaskScheduler.graph.get(task)) {
-                    String filename = dependency.getTaskName();
-
-                    int exists = worker.executeCommand("test -f " + filename + " && echo 'exists' || echo 'missing'");
-
-                    if (exists != 0) {
-                        System.out.println("[MASTER] Transferring " + filename + " to " + workerHost);
-                        transferFile(masterHost, workerHost, filename);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[MASTER] Error handling dependencies: " + e.getMessage());
-        }
-    }
-
-    private static void retrieveResults(Task task, String workerHost, String masterHost) {
-        try {
-            String resultFile = task.getTaskName();
-            if (resultFile.contains(".")) {
-                System.out.println("[MASTER] Retrieving result: " + resultFile);
-                transferFile(workerHost, masterHost, resultFile);
+            if (taskName != null && taskName.contains(".")) {
+                System.out.println("[MASTER] Retrieving result: " + taskName);
+                transferFile(workerHost, masterHost, taskName);
             }
         } catch (Exception e) {
             System.err.println("[MASTER] Error retrieving results: " + e.getMessage());
         }
     }
 
+    /**
+     * Transfers a file between hosts using scp.
+     */
     private static void transferFile(String sourceHost, String destHost, String filename) {
+        if (filename == null || filename.trim().isEmpty()) {
+            System.err.println("[MASTER] Invalid filename for transfer");
+            return;
+        }
+
         try {
             String command = "scp " + sourceHost + ":" + filename + " " + destHost + ":~";
             Process process = Runtime.getRuntime().exec(command);
@@ -84,7 +87,7 @@ public class MasterCoordinator {
                 System.err.println("[MASTER] ❌ File transfer failed: " + filename);
             }
         } catch (Exception e) {
-            System.err.println("[MASTER] Error transferring file: " + e.getMessage());
+            System.err.println("[MASTER] Error transferring file " + filename + ": " + e.getMessage());
         }
     }
 }

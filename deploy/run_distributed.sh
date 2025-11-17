@@ -1,13 +1,27 @@
 #!/bin/bash
+set -e  # Exit on error
 
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║   DISTRIBUTED WORD COUNT - Deployment Script            ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
+# Check if running in Grid5000 environment
 if [ -z "$OAR_NODEFILE" ]; then
     echo "❌ Error: OAR_NODEFILE not found"
     echo "Please reserve nodes first: oarsub -I -l nodes=5"
+    exit 1
+fi
+
+# Check if necessary files exist
+if [ ! -d "bin" ] || [ ! -f "wordcount" ] || [ ! -f "Makefile" ]; then
+    echo "❌ Error: Required files not found. Please run deploy/setup.sh first"
+    exit 1
+fi
+
+# Check if test data exists
+if [ ! -f "part1.txt" ]; then
+    echo "❌ Error: Test data not found. Please run deploy/setup.sh first"
     exit 1
 fi
 
@@ -24,7 +38,11 @@ echo "Copying files to all nodes..."
 for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         echo "  - Copying to $hostname..."
-        scp -r bin wordcount part*.txt wordcount.c $hostname:~ 2>/dev/null
+        # Copy all necessary files, excluding wordcount.c (not needed on workers)
+        if ! scp -r bin wordcount part*.txt Makefile $hostname:~ ; then
+            echo "❌ Failed to copy files to $hostname"
+            exit 1
+        fi
     fi
 done
 
@@ -34,7 +52,9 @@ echo "Starting workers..."
 for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         echo "  - Starting worker on $hostname..."
-        ssh $hostname "cd ~ && java -cp bin network.worker.WorkerNode $hostname > worker.log 2>&1" &
+        if ! ssh $hostname "cd ~ && java -cp bin network.worker.WorkerNode $hostname > worker.log 2>&1" & then
+            echo "⚠️  Warning: Failed to start worker on $hostname"
+        fi
         sleep 2
     fi
 done
@@ -49,7 +69,17 @@ echo "Starting master coordinator..."
 echo "Worker list: [$WORKER_LIST]"
 echo ""
 
-java -cp bin scheduler.Main "[$WORKER_LIST]"
+# Run from project root directory (current directory should be project root)
+if ! java -cp bin scheduler.Main "[$WORKER_LIST]"; then
+    echo "❌ Failed to run master coordinator"
+    # Cleanup workers before exit
+    for hostname in $HOSTNAMES; do
+        if [ "$hostname" != "$MASTER_NODE" ]; then
+            ssh $hostname "pkill -f WorkerNode" 2>/dev/null || true
+        fi
+    done
+    exit 1
+fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
