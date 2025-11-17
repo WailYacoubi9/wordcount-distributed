@@ -5,18 +5,35 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * Parses Makefile format and builds a dependency graph.
+ * Improved error handling and validation.
+ */
 public class MakefileParser {
     private BufferedReader reader;
     private String currentLine;
-    private HashMap<Task, List<Task>> graph;
-    private HashMap<String, Task> taskMap;
+    private final HashMap<Task, List<Task>> graph;
+    private final HashMap<String, Task> taskMap;
 
     public MakefileParser() {
         this.graph = new HashMap<>();
         this.taskMap = new HashMap<>();
     }
 
-    public HashMap<Task, List<Task>> processFile(String filePath) {
+    /**
+     * Processes a Makefile and returns the dependency graph.
+     * @param filePath Path to the Makefile
+     * @return A map of tasks to their dependencies
+     * @throws IOException if file cannot be read
+     * @throws IllegalArgumentException if filePath is null or empty
+     */
+    public HashMap<Task, List<Task>> processFile(String filePath) throws IOException {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("File path cannot be null or empty");
+        }
+
+        System.out.println("[PARSER] Reading Makefile from: " + filePath);
+
         try {
             reader = new BufferedReader(new FileReader(filePath));
             currentLine = reader.readLine();
@@ -29,9 +46,13 @@ public class MakefileParser {
             reader.close();
             System.out.println("[PARSER] Successfully parsed Makefile: " + graph.size() + " tasks found");
 
+            if (graph.isEmpty()) {
+                System.err.println("[PARSER] ⚠️  Warning: No tasks found in Makefile");
+            }
+
         } catch (IOException e) {
-            System.err.println("[PARSER] Error reading Makefile: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("[PARSER] ❌ Error reading Makefile: " + e.getMessage());
+            throw e; // Re-throw instead of silently continuing
         }
 
         return graph;
@@ -54,9 +75,11 @@ public class MakefileParser {
             if (!dependenciesStr.isEmpty()) {
                 String[] depNames = dependenciesStr.split("\\s+");
                 for (String depName : depNames) {
-                    Task depTask = taskMap.getOrDefault(depName, new Task(depName));
-                    taskMap.put(depName, depTask);
-                    dependencies.add(depTask);
+                    if (!depName.trim().isEmpty()) {
+                        Task depTask = taskMap.getOrDefault(depName, new Task(depName));
+                        taskMap.put(depName, depTask);
+                        dependencies.add(depTask);
+                    }
                 }
             }
 
@@ -64,10 +87,13 @@ public class MakefileParser {
                 currentLine = reader.readLine();
                 while (currentLine != null && currentLine.startsWith("\t")) {
                     String command = currentLine.substring(1);
-                    targetTask.addCommand(command);
+                    if (!command.trim().isEmpty()) {
+                        targetTask.addCommand(command);
+                    }
                     currentLine = reader.readLine();
                 }
             } catch (IOException e) {
+                System.err.println("[PARSER] Error reading commands for task " + targetName);
                 e.printStackTrace();
             }
 
@@ -90,7 +116,16 @@ public class MakefileParser {
                     .reduce((a, b) -> a + ", " + b)
                     .orElse(""));
             }
+            System.out.println("  Commands: " + task.getCommands().size());
         }
         System.out.println("========================\n");
+    }
+
+    /**
+     * Gets the task map (for testing purposes).
+     * @return The map of task names to tasks
+     */
+    public Map<String, Task> getTaskMap() {
+        return Collections.unmodifiableMap(taskMap);
     }
 }
