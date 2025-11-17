@@ -50,6 +50,12 @@ if ! javac -cp bin -d bin src/parser/*.java; then
     exit 1
 fi
 
+echo "  - Compiling utils..."
+if ! javac -cp bin -d bin src/utils/*.java; then
+    echo "❌ Failed to compile utils"
+    exit 1
+fi
+
 echo "  - Compiling scheduler..."
 if ! javac -cp bin -d bin src/scheduler/*.java; then
     echo "❌ Failed to compile scheduler"
