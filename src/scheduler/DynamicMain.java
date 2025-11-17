@@ -133,7 +133,8 @@ public class DynamicMain {
         for (int i = 0; i < splitFiles.size(); i++) {
             String splitFile = splitFiles.get(i);
             String outputFile = "count" + (i + 1) + ".txt";
-            String taskName = "count-" + splitFile;
+            // Use outputFile as taskName so file retrieval works correctly
+            String taskName = outputFile;
 
             Task task = new Task(taskName, clusterManager);
             // Redirect output to file so we can read it back
