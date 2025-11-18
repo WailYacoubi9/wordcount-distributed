@@ -69,10 +69,20 @@ public class MasterCoordinator {
 
     /**
      * Transfers a file between hosts using scp.
+     * Skips transfer if source and destination are both localhost.
      */
     private static void transferFile(String sourceHost, String destHost, String filename) {
         if (filename == null || filename.trim().isEmpty()) {
             System.err.println("[MASTER] Invalid filename for transfer");
+            return;
+        }
+
+        // Skip transfer if both hosts are localhost (file is already accessible)
+        boolean sourceIsLocal = isLocalhost(sourceHost);
+        boolean destIsLocal = isLocalhost(destHost);
+
+        if (sourceIsLocal && destIsLocal) {
+            System.out.println("[MASTER] ✅ File available locally: " + filename);
             return;
         }
 
@@ -89,5 +99,17 @@ public class MasterCoordinator {
         } catch (Exception e) {
             System.err.println("[MASTER] Error transferring file " + filename + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Checks if a hostname refers to localhost.
+     */
+    private static boolean isLocalhost(String hostname) {
+        if (hostname == null) return false;
+        String normalized = hostname.trim().toLowerCase();
+        return normalized.equals("localhost") ||
+               normalized.equals("127.0.0.1") ||
+               normalized.equals("::1") ||
+               normalized.equals("0.0.0.0");
     }
 }
