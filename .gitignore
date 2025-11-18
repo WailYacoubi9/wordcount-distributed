@@ -31,6 +31,7 @@ count*.txt
 total.txt
 part*.txt
 test_*.txt
+*test.txt
 wordcount
 *.log
 
