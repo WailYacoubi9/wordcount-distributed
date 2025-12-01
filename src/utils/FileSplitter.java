@@ -137,4 +137,28 @@ public class FileSplitter {
             }
         }
     }
+
+    /**
+     * Main method for command-line usage.
+     * Usage: java utils.FileSplitter <inputFile> <numWorkers> <outputPrefix>
+     */
+    public static void main(String[] args) {
+        if (args.length < 3) {
+            System.err.println("Usage: java utils.FileSplitter <inputFile> <numWorkers> <outputPrefix>");
+            System.err.println("Example: java utils.FileSplitter data.txt 4 part");
+            System.exit(1);
+        }
+
+        String inputFile = args[0];
+        int numWorkers = Integer.parseInt(args[1]);
+        String outputPrefix = args[2];
+
+        try {
+            List<String> splitFiles = splitFileEquitably(inputFile, numWorkers, outputPrefix);
+            System.out.println("[SPLITTER] ✅ Successfully created " + splitFiles.size() + " files");
+        } catch (IOException e) {
+            System.err.println("[SPLITTER] ❌ Error: " + e.getMessage());
+            System.exit(1);
+        }
+    }
 }

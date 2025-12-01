@@ -42,3 +42,4 @@ Thumbs.db
 # Grid5000 temporary files
 combined_nodefile
 large-input.txt
+Makefile.generated
