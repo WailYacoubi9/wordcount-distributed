@@ -1,7 +1,0 @@
-Hello world! This is my custom text file.
-I want to count words in this file.
-The distributed system will split this file among workers.
-Each worker will count words in their assigned portion.
-Then the results will be aggregated to get the total count.
-This is much better than using predefined test files!
-I can use any text file I want.
