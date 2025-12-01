@@ -119,18 +119,71 @@ sleep 5
 echo ""
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║   STARTING DYNAMIC DISTRIBUTED EXECUTION                ║"
+echo "║   GENERATING MAKEFILE FOR USER FILE                     ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
-echo "Mode: Dynamic (auto-generating Makefile with $WORKER_COUNT parts)"
+
+# Split the input file
+INPUT_BASENAME=$(basename "$INPUT_FILE")
+echo "📝 Splitting file into $WORKER_COUNT parts..."
+java -cp bin utils.FileSplitter "$INPUT_BASENAME" $WORKER_COUNT part
+
+# Generate Makefile adapted to number of workers
+echo "📝 Generating Makefile with $WORKER_COUNT tasks..."
+cat > Makefile << MAKEFILE_END
+# Auto-generated Makefile for $INPUT_BASENAME with $WORKER_COUNT workers
+
+wordcount: test/wordcount.c
+	gcc -o wordcount test/wordcount.c
+
+MAKEFILE_END
+
+# Generate count targets for each part
+for i in $(seq 1 $WORKER_COUNT); do
+    cat >> Makefile << MAKEFILE_END
+count$i.txt: part$i.txt wordcount
+	./wordcount part$i.txt > count$i.txt
+
+MAKEFILE_END
+done
+
+# Generate total.txt target
+echo -n "total.txt:" >> Makefile
+for i in $(seq 1 $WORKER_COUNT); do
+    echo -n " count$i.txt" >> Makefile
+done
+echo "" >> Makefile
+echo -n "	cat" >> Makefile
+for i in $(seq 1 $WORKER_COUNT); do
+    echo -n " count$i.txt" >> Makefile
+done
+echo " | awk '{sum += \$1} END {print sum}' > total.txt" >> Makefile
+
+echo "✅ Makefile generated with $WORKER_COUNT parts"
+cat Makefile
+echo ""
+
+# Distribute split files to workers
+echo "📦 Distributing split files to workers..."
+for i in $(seq 1 $WORKER_COUNT); do
+    for hostname in $(echo $WORKERS | tr ',' '\n'); do
+        scp -q part$i.txt $hostname:~/ 2>/dev/null || true
+    done
+done
+echo "✅ Split files distributed"
+echo ""
+
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║   STARTING STATIC MAKEFILE EXECUTION                    ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
 echo "Workers: [$WORKERS]"
 echo ""
 
-# Run the dynamic system
-INPUT_BASENAME=$(basename "$INPUT_FILE")
+# Run the static system (Main.java with existing Makefile)
 START_TIME=$(date +%s)
 
-if java -cp bin scheduler.Main "$INPUT_BASENAME" "[$WORKERS]"; then
+if java -cp bin scheduler.Main "[$WORKERS]"; then
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
 
