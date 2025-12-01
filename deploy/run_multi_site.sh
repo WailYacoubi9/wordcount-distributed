@@ -113,7 +113,8 @@ for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         SITE=$(echo $hostname | cut -d'.' -f2)
         echo "  - [$SITE] Copying to $hostname..."
-        if ! scp -q -r bin wordcount $hostname:~ ; then
+        # Copy all necessary files: bin/, wordcount binary, test/, input files, and Makefile
+        if ! scp -q -r bin wordcount test part*.txt Makefile $hostname:~ ; then
             echo "❌ Failed to copy files to $hostname"
             echo "   Check network connectivity and SSH access"
             exit 1

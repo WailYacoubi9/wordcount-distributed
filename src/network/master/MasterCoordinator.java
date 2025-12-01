@@ -87,17 +87,31 @@ public class MasterCoordinator {
         }
 
         try {
-            String command = "scp " + sourceHost + ":" + filename + " " + destHost + ":~";
+            // Copy from worker's home directory to master's current directory
+            // Use array form to properly handle arguments
+            String[] command = {
+                "scp",
+                sourceHost + ":~/" + filename,
+                "."
+            };
             Process process = Runtime.getRuntime().exec(command);
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
                 System.out.println("[MASTER] ✅ File transferred: " + filename);
             } else {
+                // Print stderr to diagnose issues
+                java.io.BufferedReader errorReader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getErrorStream()));
+                String line;
                 System.err.println("[MASTER] ❌ File transfer failed: " + filename);
+                while ((line = errorReader.readLine()) != null) {
+                    System.err.println("[SCP ERROR] " + line);
+                }
             }
         } catch (Exception e) {
             System.err.println("[MASTER] Error transferring file " + filename + ": " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

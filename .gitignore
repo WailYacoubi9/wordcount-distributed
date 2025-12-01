@@ -38,3 +38,7 @@ wordcount
 # OS files
 .DS_Store
 Thumbs.db
+
+# Grid5000 temporary files
+combined_nodefile
+large-input.txt

@@ -38,8 +38,8 @@ echo "Copying files to all nodes..."
 for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         echo "  - Copying to $hostname..."
-        # Copy all necessary files, excluding wordcount.c (not needed on workers)
-        if ! scp -r bin wordcount part*.txt Makefile $hostname:~ ; then
+        # Copy all necessary files: bin/, wordcount binary, test/, input files, and Makefile
+        if ! scp -r bin wordcount test part*.txt Makefile $hostname:~ ; then
             echo "❌ Failed to copy files to $hostname"
             exit 1
         fi

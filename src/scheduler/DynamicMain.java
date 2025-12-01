@@ -66,6 +66,10 @@ public class DynamicMain {
             System.out.println("\n[MAIN] Splitting input file into " + numWorkers + " parts...");
             splitFiles = FileSplitter.splitFileEquitably(inputFile, numWorkers, "part");
 
+            // Distribute split files to all workers
+            System.out.println("\n[MAIN] Distributing split files to workers...");
+            distributeSplitFiles(splitFiles, clusterManager);
+
             // Ensure wordcount binary exists
             System.out.println("\n[MAIN] Checking wordcount binary...");
             File wordcountBinary = new File("wordcount");
@@ -108,6 +112,32 @@ public class DynamicMain {
             FileSplitter.cleanupFiles(splitFiles);
             System.exit(1);
         }
+    }
+
+    /**
+     * Distributes split files to all worker nodes using scp.
+     */
+    private static void distributeSplitFiles(List<String> splitFiles, ClusterManager clusterManager) {
+        List<ComputeNode> nodes = clusterManager.getNodes();
+
+        for (String splitFile : splitFiles) {
+            for (ComputeNode node : nodes) {
+                try {
+                    String hostname = node.hostname;
+                    // Use scp to copy split file to worker's home directory
+                    String[] command = {"scp", "-q", splitFile, hostname + ":~/"};
+                    Process process = Runtime.getRuntime().exec(command);
+                    int exitCode = process.waitFor();
+
+                    if (exitCode != 0) {
+                        System.err.println("[MAIN] ⚠️  Failed to copy " + splitFile + " to " + hostname);
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MAIN] Error distributing " + splitFile + ": " + e.getMessage());
+                }
+            }
+        }
+        System.out.println("[MAIN] ✅ Split files distributed to all workers");
     }
 
     /**
