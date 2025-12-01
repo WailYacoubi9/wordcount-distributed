@@ -87,7 +87,8 @@ public class MasterCoordinator {
         }
 
         try {
-            String command = "scp " + sourceHost + ":" + filename + " " + destHost + ":~";
+            // Copy from worker's home directory to master's current directory
+            String command = "scp " + sourceHost + ":~/" + filename + " .";
             Process process = Runtime.getRuntime().exec(command);
             int exitCode = process.waitFor();
 
