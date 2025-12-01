@@ -111,8 +111,23 @@ public class Task {
     }
 
     /**
+     * Checks if this task is a final aggregation task that should run on master.
+     * Aggregation tasks combine results from multiple workers and should have
+     * access to all intermediate result files.
+     * @return true if this is an aggregation task
+     */
+    private boolean isAggregationTask() {
+        // Detect if this is the final aggregation (total.txt)
+        // or any task that aggregates multiple count files
+        return taskName.equals("total.txt") ||
+               (commands.stream().anyMatch(cmd ->
+                   cmd.contains("cat") && cmd.contains("count") && cmd.contains("awk")));
+    }
+
+    /**
      * Executes all commands for this task.
      * This method is thread-safe and handles node allocation properly.
+     * Aggregation tasks run locally on the master to ensure access to all result files.
      */
     public void execute() {
         if (clusterManager == null) {
@@ -128,9 +143,20 @@ public class Task {
         }
 
         try {
-            for (String command : commands) {
-                if (!executeCommand(command)) {
-                    return; // Status already set to FAILED
+            // Aggregation tasks must run on the master node where all result files are collected
+            if (isAggregationTask()) {
+                System.out.println("[TASK " + taskName + "] 📊 Running aggregation locally on master node");
+                for (String command : commands) {
+                    if (!executeLocalCommand(command)) {
+                        return; // Status already set to FAILED
+                    }
+                }
+            } else {
+                // Regular tasks can be distributed to any available worker
+                for (String command : commands) {
+                    if (!executeCommand(command)) {
+                        return; // Status already set to FAILED
+                    }
                 }
             }
 
@@ -140,6 +166,44 @@ public class Task {
             System.err.println("[TASK " + taskName + "] Exception: " + e.getMessage());
             e.printStackTrace();
             this.status = TaskStatus.FAILED;
+        }
+    }
+
+    /**
+     * Executes a command locally on the master node using bash.
+     * Used for aggregation tasks that need access to all result files.
+     * @param command The command to execute
+     * @return true if successful, false if failed
+     */
+    private boolean executeLocalCommand(String command) {
+        System.out.println("[TASK " + taskName + "] Executing locally: " + command);
+
+        try {
+            // Use bash -c to properly handle shell commands with pipes
+            String[] execCommand = {"/bin/bash", "-c", command};
+            Process process = Runtime.getRuntime().exec(execCommand);
+            int exitCode = process.waitFor();
+
+            if (exitCode == 0) {
+                System.out.println("[TASK " + taskName + "] ✅ Local execution successful");
+                return true;
+            } else {
+                // Print error output for diagnostics
+                java.io.BufferedReader errorReader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getErrorStream()));
+                String line;
+                System.err.println("[TASK " + taskName + "] ❌ Local execution failed with exit code: " + exitCode);
+                while ((line = errorReader.readLine()) != null) {
+                    System.err.println("[ERROR] " + line);
+                }
+                this.status = TaskStatus.FAILED;
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("[TASK " + taskName + "] ❌ Exception during local execution: " + e.getMessage());
+            e.printStackTrace();
+            this.status = TaskStatus.FAILED;
+            return false;
         }
     }
 
