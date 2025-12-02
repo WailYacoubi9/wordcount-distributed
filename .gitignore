@@ -41,5 +41,10 @@ Thumbs.db
 
 # Grid5000 temporary files
 combined_nodefile
+combined_nodefile_*
 large-input.txt
 Makefile.generated
+
+# NFS temporary files
+worker_nfs.log
+multisite_test.txt
