@@ -1,6 +1,6 @@
 # 🚀 Distributed Word Count System
 
-A production-ready distributed word counting system using **Java RMI** on **Grid5000** infrastructure with support for both **mono-site** and **multi-site** deployments.
+A **Makefile-based** distributed word counting system using **Java RMI** on **Grid5000** infrastructure. Accepts any user input file with automatic Makefile generation and supports both **mono-site** and **multi-site** deployments.
 
 ---
 
@@ -19,12 +19,14 @@ A production-ready distributed word counting system using **Java RMI** on **Grid
 ## ✨ Features
 
 - ✅ **Makefile parser** with dependency resolution and parallel execution
+- ✅ **User file input** - accepts any text file with auto-generated Makefile
 - ✅ **Intelligent task scheduler** with automatic load balancing
 - ✅ **RMI-based distributed execution** across multiple nodes
 - ✅ **Dynamic file splitting** with equitable load distribution (max ±1 line difference)
+- ✅ **Automatic worker adaptation** - splits file according to available workers
 - ✅ **Multi-worker support** with dynamic RMI ports
 - ✅ **Mono-site and multi-site** Grid5000 deployment
-- ✅ **Automatic input processing** - accepts any text file
+- ✅ **Aggregation fix** - final task runs on master with all result files
 - ✅ **Comprehensive testing** suite with local simulation
 
 ## 🏗️ Architecture
@@ -76,13 +78,12 @@ wordcount-distributed/
 ├── src/
 │   ├── parser/              # Makefile parsing & task management
 │   │   ├── MakefileParser.java    # Parses Makefile syntax
-│   │   ├── Task.java              # Task representation with commands
+│   │   ├── Task.java              # Task with local aggregation support ✨
 │   │   ├── TaskStatus.java        # Task state tracking
 │   │   ├── Token.java             # Lexical tokens
 │   │   └── TokenCode.java         # Token types
 │   ├── scheduler/           # Task scheduling & execution
-│   │   ├── Main.java              # Static Makefile-based scheduler
-│   │   ├── DynamicMain.java       # Dynamic with auto file-splitting ✨
+│   │   ├── Main.java              # Supports static & dynamic modes ✨
 │   │   └── TaskScheduler.java     # Parallel execution engine
 │   ├── network/             # RMI communication layer
 │   │   ├── master/
@@ -96,23 +97,20 @@ wordcount-distributed/
 │   │   ├── NodeStatus.java        # Node health tracking
 │   │   └── ClusterManager.java    # Cluster coordination
 │   ├── utils/               # Utility classes ✨
-│   │   └── FileSplitter.java      # Equitable file division
+│   │   └── FileSplitter.java      # Equitable file division with CLI
 │   └── config/              # Configuration
 │       └── Configuration.java     # RMI & system config
 ├── deploy/                  # Deployment scripts ✨
 │   ├── setup.sh                   # Compilation & setup
-│   ├── run_distributed.sh         # Original deployment
-│   ├── run_mono_site.sh           # Mono-site Grid5000 ✨
-│   ├── run_multi_site.sh          # Multi-site Grid5000 ✨
-│   ├── run_dynamic.sh             # Dynamic system ✨
-│   └── test_local.sh              # Local simulation test ✨
+│   ├── run_user_file.sh           # User file with auto Makefile ✨ NEW
+│   ├── run_mono_site.sh           # Mono-site Grid5000 (static Makefile)
+│   ├── run_multi_site.sh          # Multi-site Grid5000 (static Makefile)
+│   └── test_local.sh              # Local simulation test
 ├── test/                    # Test files
 │   ├── wordcount.c                # Word count binary
 │   └── generate_data.sh           # Test data generation
-├── docs/                    # Documentation
-│   └── ARCHITECTURE.md
 ├── GRID5000_TESTING.md      # Comprehensive testing guide ✨
-├── Makefile                 # Task dependencies
+├── Makefile                 # Static task dependencies (5 parts)
 └── README.md
 ```
 
@@ -166,11 +164,11 @@ java -cp bin network.worker.WorkerNode localhost 3001
 # Terminal 3 - Start worker 3
 java -cp bin network.worker.WorkerNode localhost 3002
 
-# Terminal 4 - Run static system
+# Terminal 4 - Run static mode (existing Makefile)
 java -cp bin scheduler.Main "[localhost:3000,localhost:3001,localhost:3002]"
 
-# OR - Run dynamic system with any input file
-java -cp bin scheduler.DynamicMain myfile.txt "[localhost:3000,localhost:3001,localhost:3002]"
+# OR - Run dynamic mode (auto-generate Makefile from user file)
+java -cp bin scheduler.Main myfile.txt "[localhost:3000,localhost:3001,localhost:3002]"
 ```
 
 ### Option 3: Grid5000 Deployment
@@ -191,35 +189,54 @@ bash deploy/run_mono_site.sh
 #### Multi-Site (Nodes across multiple sites)
 
 ```bash
-# 1. Reserve nodes on multiple sites
-oargridsub -w 1:00:00 \
-  nancy:rdef="/nodes=2" \
-  lyon:rdef="/nodes=2"
+# 1. Reserve nodes on multiple sites (2 terminals)
+# Terminal 1 (Grenoble)
+oarsub -I -l nodes=2,walltime=1:00:00
+cat $OAR_NODEFILE > combined_nodefile
 
-# 2. Deploy and run
+# Terminal 2 (Lyon)
+oarsub -I -l nodes=2,walltime=1:00:00
+cat $OAR_NODEFILE >> combined_nodefile
+
+# 2. Deploy and run (on Grenoble)
 cd ~/wordcount-distributed
-bash deploy/run_multi_site.sh
+bash deploy/run_multi_site.sh combined_nodefile
 ```
 
-#### Dynamic System (Any input file)
+#### User File Mode (Any input file) ✨ NEW
 
 ```bash
-# Works with ANY text file - automatic splitting!
-bash deploy/run_dynamic.sh large-corpus.txt mono   # or 'multi'
+# Works with ANY text file - auto-generates Makefile!
+# Automatically adapts to number of workers
+oarsub -I -l nodes=4,walltime=1:00:00
+cd ~/wordcount-distributed
+bash deploy/run_user_file.sh mydata.txt
+
+# The script will:
+# - Detect 3 workers (4 nodes - 1 master)
+# - Split your file into 3 parts
+# - Generate Makefile with 3 tasks
+# - Execute and show results
 ```
 
-## 📊 System Comparison
+## 📊 System Modes
 
-### Static vs Dynamic System
+### Main.java: Static vs Dynamic Mode
 
-| Feature | Static (Main.java) | Dynamic (DynamicMain.java) |
-|---------|-------------------|---------------------------|
-| **Input** | Pre-split files (part1-5.txt) | Any single text file |
-| **Splitting** | Manual (generate_data.sh) | Automatic equitable splitting |
-| **Load Balance** | Fixed by pre-split | Perfect (max ±1 line diff) |
-| **Dependencies** | Full Makefile support | Simple parallel execution |
-| **Flexibility** | Complex workflows | Any file, any size |
-| **Use Case** | Makefile-based tasks | General word counting |
+`Main.java` supports two execution modes:
+
+| Feature | Static Mode | Dynamic Mode |
+|---------|-------------|--------------|
+| **Usage** | `Main.java "[workers]"` | `Main.java file.txt "[workers]"` |
+| **Input** | Existing Makefile | Any text file |
+| **Makefile** | Uses existing Makefile | Auto-generates Makefile |
+| **Splitting** | Pre-defined in Makefile | Automatic equitable splitting |
+| **Workers** | Fixed (Makefile defines N tasks) | Adapts to available workers |
+| **Load Balance** | Depends on Makefile | Perfect (max ±1 line diff) |
+| **Makefile Parsing** | ✅ Always | ✅ Always (generated) |
+| **Use Case** | Custom dependencies/workflows | Quick word counting |
+
+**Both modes** parse a Makefile and respect dependency graphs (project requirement).
 
 ### Mono-Site vs Multi-Site
 
@@ -258,40 +275,50 @@ bash deploy/run_dynamic.sh large-corpus.txt mono   # or 'multi'
 📊 Total word count: 75000
 ```
 
-### Dynamic System (Auto-splitting)
+### User File Mode (run_user_file.sh)
 ```
 ╔══════════════════════════════════════════════════════════╗
-║   DYNAMIC DISTRIBUTED WORD COUNT                        ║
+║   DISTRIBUTED WORD COUNT - User File Mode              ║
 ╚══════════════════════════════════════════════════════════╝
 
-📄 Input file: large-corpus.txt
-   Size: 10485760 bytes
-   Lines: 50000
+📄 Input file: mydata.txt
+   Size: 231 bytes
+   Lines: 5
 
-📊 Expected load distribution:
-   Lines per worker: ~12500
-   (System will auto-balance with max ±1 line difference)
+👷 Workers: 3
+  - dahu-12.grenoble.grid5000.fr
+  - dahu-2.grenoble.grid5000.fr
+  - dahu-8.grenoble.grid5000.fr
 
-[MAIN] Splitting file into 4 parts...
-[SPLITTER] Part 1: 12500 lines
-[SPLITTER] Part 2: 12500 lines
-[SPLITTER] Part 3: 12500 lines
-[SPLITTER] Part 4: 12500 lines
+📝 Splitting file into 3 parts...
+[SPLITTER] Created part1.txt with 2 lines
+[SPLITTER] Created part2.txt with 2 lines
+[SPLITTER] Created part3.txt with 1 lines
 
-[MAIN] Executing tasks in parallel...
-✅ All tasks completed!
+📝 Generating Makefile with 3 tasks...
+# Auto-generated Makefile for mydata.txt with 3 workers
+...
+
+[MAIN] Parsing Makefile...
+[SCHEDULER] Starting task execution...
+[TASK total.txt] 📊 Running aggregation locally on master node
+[SCHEDULER] ✅ All tasks completed!
+
+═══════════════════════════════════════════════════════════
+✅ Execution completed successfully!
+═══════════════════════════════════════════════════════════
 
 📊 RESULTS:
-  Worker 1: 3,125,000 words
-  Worker 2: 3,125,000 words
-  Worker 3: 3,125,000 words
-  Worker 4: 3,125,000 words
-  ─────────────────────────
-  TOTAL: 12,500,000 words
+  Total word count: 36
+
+  Individual counts:
+    - part1.txt: 14 words
+    - part2.txt: 14 words
+    - part3.txt: 8 words
 
 ⏱️ Performance:
-   Throughput: 2,173 lines/sec
-   Execution time: 23s
+   Workers: 3
+   Execution time: 2s
 ```
 
 ## 🔧 Advanced Features
@@ -358,12 +385,12 @@ Scripts automatically detect and verify deployment:
 
 - **[GRID5000_TESTING.md](GRID5000_TESTING.md)** - Comprehensive Grid5000 testing guide
   - Mono-site testing procedures
-  - Multi-site testing with oargridsub
-  - Dynamic system usage
+  - Multi-site testing procedures
+  - User file mode usage
   - Troubleshooting common issues
   - Performance benchmarking
 
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Detailed system architecture
+- **[QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - Step-by-step getting started guide
 
 ## 🧪 Testing Summary
 
@@ -373,12 +400,14 @@ All deployment scripts have been validated:
 |------|--------|-------------|
 | Project Setup | ✅ | Compilation and binary generation |
 | Worker Startup | ✅ | Multi-port RMI, 3 workers tested |
-| Static System | ✅ | Makefile-based execution |
-| Dynamic System | ✅ | Auto-splitting, any input file |
-| FileSplitter | ✅ | Equitable distribution algorithm |
+| Static Makefile Mode | ✅ | Uses existing Makefile (5 parts) |
+| Dynamic File Mode | ✅ | Auto-generates Makefile from user file |
+| FileSplitter CLI | ✅ | Command-line file splitting utility |
+| Aggregation Fix | ✅ | Final task runs on master node |
 | Multi-Port | ✅ | localhost:3100-3102 tested |
-| Mono-Site Script | ✅ | Site verification logic |
-| Multi-Site Script | ✅ | Site distribution analysis |
+| Mono-Site Grid5000 | ✅ | Tested on Grenoble with 4 workers |
+| Multi-Site Grid5000 | ✅ | Tested on Grenoble+Lyon (correct: 75000) |
+| User File Script | ✅ | Auto-adapts to worker count (tested: 36 words) |
 
 **Local simulation test:** `bash deploy/test_local.sh`
 
@@ -408,16 +437,18 @@ Educational project for distributed systems course. Contributions welcome!
 
 Educational project - Academic use only.
 
-## 🔗 Key Improvements in This Version
+## 🔗 Key Features & Improvements
 
-1. ✨ **Dynamic file splitting** - Accept any text file, automatic equitable division
-2. ✨ **Multi-site support** - Deploy across multiple Grid5000 sites
-3. ✨ **Enhanced scripts** - Mono-site, multi-site, dynamic deployment
-4. ✨ **Local testing** - Comprehensive simulation without Grid5000
-5. ✨ **Multi-port RMI** - Run multiple workers on localhost
-6. ✨ **Perfect load balancing** - Max ±1 line difference guarantee
-7. ✨ **Comprehensive docs** - 420-line testing guide
-8. ✨ **Production quality** - Thread-safe, error handling, proper cleanup
+1. ✨ **Makefile-based architecture** - Always parses Makefile (academic project requirement)
+2. ✨ **User file support** - Accept any text file with auto-generated Makefile
+3. ✨ **Automatic worker adaptation** - Splits file according to available workers
+4. ✨ **Aggregation fix** - Final task runs locally on master node (fixed multi-site bug)
+5. ✨ **Multi-site support** - Deploy across multiple Grid5000 sites
+6. ✨ **Unified Main.java** - Single entry point with static & dynamic modes
+7. ✨ **FileSplitter CLI** - Command-line utility for file splitting
+8. ✨ **Enhanced deployment** - run_user_file.sh, run_mono_site.sh, run_multi_site.sh
+9. ✨ **Perfect load balancing** - Max ±1 line difference guarantee
+10. ✨ **Production quality** - Thread-safe, error handling, proper cleanup
 
 ---
 
