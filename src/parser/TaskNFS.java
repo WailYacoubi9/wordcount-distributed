@@ -3,7 +3,7 @@ package parser;
 import cluster.ClusterManager;
 import cluster.ComputeNode;
 import config.Configuration;
-import network.master.MasterCoordinator;
+import network.master.MasterCoordinatorNFS;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -242,13 +242,12 @@ public class TaskNFS {
             System.out.println("[TASK-NFS " + taskName + "] Assigned to worker: " + availableWorker.hostname + ":" + availableWorker.port);
 
             // Worker executes command in NFS directory
+            // No file transfer needed - results written directly to shared NFS
             String cdCommand = "cd " + nfsPath + " && " + command;
-            int exitCode = MasterCoordinator.executeOnWorker(
+            int exitCode = MasterCoordinatorNFS.executeOnWorker(
                 cdCommand,
                 availableWorker.hostname,
-                availableWorker.port,
-                clusterManager.getMasterNode().hostname,
-                this.taskName
+                availableWorker.port
             );
 
             if (exitCode == 0) {
