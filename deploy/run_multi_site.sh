@@ -7,23 +7,44 @@ echo "║   Nodes distributed across multiple Grid5000 sites      ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if running in Grid5000 environment
-if [ -z "$OAR_NODEFILE" ]; then
-    echo "❌ Error: OAR_NODEFILE not found"
+# Check for nodefile (either from argument or environment)
+if [ -n "$1" ] && [ -f "$1" ]; then
+    echo "📄 Using nodefile from argument: $1"
+    OAR_NODEFILE="$1"
+elif [ -z "$OAR_NODEFILE" ]; then
+    echo "❌ Error: No nodefile provided"
+    echo ""
+    echo "Usage:"
+    echo "  $0 [combined_nodefile]"
     echo ""
     echo "For multi-site deployment on Grid5000:"
     echo ""
-    echo "1. Reserve nodes on multiple sites using oargridsub:"
-    echo "   oargridsub -w 1:00:00 nancy:rdef=\"/nodes=2\",lyon:rdef=\"/nodes=2\""
+    echo "Option 1: Use the helper script"
+    echo "   bash deploy/setup_multisite.sh"
     echo ""
-    echo "2. Or manually reserve on each site and combine nodefiles:"
-    echo "   # On site 1:"
-    echo "   oarsub -I -l nodes=2"
-    echo "   # On site 2:"
-    echo "   oarsub -I -l nodes=2"
-    echo "   # Then combine OAR_NODEFILE from both"
+    echo "Option 2: Manually combine nodefiles"
+    echo "   # Reserve on site 1:"
+    echo "   ssh grenoble && oarsub -I -l nodes=2,walltime=1:00:00"
+    echo "   cat \$OAR_NODEFILE | uniq > ~/nodes_grenoble.txt"
+    echo ""
+    echo "   # Reserve on site 2:"
+    echo "   ssh lyon && oarsub -I -l nodes=2,walltime=1:00:00"
+    echo "   cat \$OAR_NODEFILE | uniq > ~/nodes_lyon.txt"
+    echo "   scp ~/nodes_lyon.txt grenoble_master:~/"
+    echo ""
+    echo "   # On grenoble master:"
+    echo "   cat ~/nodes_grenoble.txt ~/nodes_lyon.txt > ~/combined_nodes.txt"
+    echo "   export OAR_NODEFILE=~/combined_nodes.txt"
+    echo "   bash deploy/run_multi_site.sh"
+    echo ""
+    exit 1
+elif [ ! -f "$OAR_NODEFILE" ]; then
+    echo "❌ Error: Nodefile not found: $OAR_NODEFILE"
     exit 1
 fi
+
+echo "📋 Using nodefile: $OAR_NODEFILE"
+echo ""
 
 # ==================== COMPILE JAVA CODE ====================
 
