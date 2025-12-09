@@ -153,12 +153,39 @@ public class MasterCoordinator {
 
     /**
      * Transfers a file using SCP.
+     * Note: Requires passwordless SSH authentication (SSH keys must be configured).
      */
     private static boolean transferFileSCP(String sourceHost, String destHost, String filename) {
         try {
-            String command = "scp " + sourceHost + ":" + filename + " " + destHost + ":~";
+            // Use SSH options to avoid interactive prompts
+            String command = "scp -o BatchMode=yes -o StrictHostKeyChecking=no " +
+                           sourceHost + ":" + filename + " " + destHost + ":~";
+
             Process process = Runtime.getRuntime().exec(command);
             int exitCode = process.waitFor();
+
+            if (exitCode != 0) {
+                // Read error output for debugging
+                java.io.BufferedReader errorReader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getErrorStream()));
+                String errorLine;
+                StringBuilder errorMsg = new StringBuilder();
+                while ((errorLine = errorReader.readLine()) != null) {
+                    errorMsg.append(errorLine).append("\n");
+                }
+
+                if (errorMsg.toString().contains("Permission denied") ||
+                    errorMsg.toString().contains("password")) {
+                    System.err.println("[MASTER] ⚠️  SCP authentication failed!");
+                    System.err.println("[MASTER] 💡 Solution: Configure SSH keys for passwordless authentication:");
+                    System.err.println("[MASTER]     1. ssh-keygen -t rsa -N \"\" -f ~/.ssh/id_rsa");
+                    System.err.println("[MASTER]     2. ssh-copy-id " + sourceHost);
+                    System.err.println("[MASTER]     3. Test: ssh " + sourceHost + " 'echo OK'");
+                } else {
+                    System.err.println("[MASTER] SCP error output: " + errorMsg);
+                }
+            }
+
             return exitCode == 0;
         } catch (Exception e) {
             System.err.println("[MASTER] SCP error: " + e.getMessage());
