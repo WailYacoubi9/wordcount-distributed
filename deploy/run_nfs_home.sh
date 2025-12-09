@@ -66,8 +66,12 @@ echo -e "${BLUE}📁 Setting up NFS shared directory in HOME...${NC}"
 mkdir -p $NFS_SHARED_DIR
 chmod 755 $NFS_SHARED_DIR
 
-# Copy necessary files to NFS directory
-cp -r $PROJECT_DIR/test $NFS_SHARED_DIR/
+# In NFS mode, files are already accessible - no copy needed!
+# Just ensure the test directory exists in the project
+if [ ! -d "$PROJECT_DIR/test" ]; then
+    echo -e "${RED}❌ Error: $PROJECT_DIR/test directory not found${NC}"
+    exit 1
+fi
 echo -e "${GREEN}✅ NFS directory created: $NFS_SHARED_DIR${NC}"
 
 # Verify NFS is accessible from workers
@@ -101,14 +105,15 @@ Grenoble Lyon Nancy infrastructure de recherche.
 EOF
     INPUT_FILE="test_input.txt"
 else
+    # In NFS mode, use absolute path or create symlink - no copy needed!
     INPUT_FILE=$(basename "$1")
-    cp "$1" $NFS_SHARED_DIR/$INPUT_FILE
-    echo -e "${GREEN}✅ Input file copied to NFS: $INPUT_FILE${NC}"
+    ln -sf "$(realpath $1)" $NFS_SHARED_DIR/$INPUT_FILE
+    echo -e "${GREEN}✅ Input file linked to NFS (no copy): $INPUT_FILE${NC}"
 fi
 
 # Compile wordcount in NFS directory
 echo -e "${BLUE}🔨 Compiling wordcount program in NFS directory...${NC}"
-gcc -o $NFS_SHARED_DIR/wordcount $NFS_SHARED_DIR/test/wordcount.c
+gcc -o $NFS_SHARED_DIR/wordcount $PROJECT_DIR/test/wordcount.c
 echo -e "${GREEN}✅ Wordcount compiled${NC}"
 echo ""
 
@@ -116,11 +121,9 @@ echo ""
 
 echo -e "${BLUE}📦 Deploying workers...${NC}"
 
-# Copy compiled code to all nodes (including master for local execution)
-for node in $ALL_NODES; do
-    echo "  Copying to $node..."
-    scp -q -r $PROJECT_DIR/bin $node:~/
-done
+# In NFS mode: bin directory is already accessible on all nodes via /home
+# NO SCP NEEDED - all nodes see $PROJECT_DIR/bin automatically!
+echo -e "${GREEN}✅ Compiled code already accessible via NFS (no copy needed)${NC}"
 
 # Start worker nodes
 echo -e "${BLUE}🚀 Starting worker nodes...${NC}"
