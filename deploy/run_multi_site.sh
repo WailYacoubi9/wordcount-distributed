@@ -2,7 +2,7 @@
 set -e  # Exit on error
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║   MULTI-SITE DISTRIBUTED WORD COUNT                     ║"
+echo "║   MULTI-SITE DISTRIBUTED WORD COUNT (SCP Mode)          ║"
 echo "║   Nodes distributed across multiple Grid5000 sites      ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -215,21 +215,24 @@ echo "⏳ Waiting for workers to initialize across all sites..."
 sleep 8
 echo ""
 
-# Build worker list for scheduler
-WORKER_LIST=$(echo "$HOSTNAMES" | grep -v "$MASTER_NODE" | awk '{printf "\"%s\",", $0}' | sed 's/,$//')
+# Build ALL_NODES list for scheduler (master + workers, as required by ClusterManager)
+ALL_NODES_LIST=$(echo "$HOSTNAMES" | awk '{printf "\"%s\",", $0}' | sed 's/,$//')
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║   STARTING MULTI-SITE DISTRIBUTED EXECUTION             ║"
+echo "║   STARTING MULTI-SITE DISTRIBUTED EXECUTION (SCP MODE)  ║"
 echo "╚══════════════════════════════════════════════════════════╝"
-echo "Worker list: [$WORKER_LIST]"
+echo "Node list: [$ALL_NODES_LIST]"
 echo ""
 echo "⚠️  Note: Inter-site communication may show increased latency"
 echo ""
 
-# Run the static Makefile-based system
+# Copy Makefile.generated to Makefile for execution
+cp Makefile.generated Makefile
+
+# Run the static Makefile-based system with generated Makefile
 START_TIME=$(date +%s)
 
-if java -cp bin scheduler.Main "[$WORKER_LIST]"; then
+if java -cp bin scheduler.Main "[$ALL_NODES_LIST]"; then
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
 
@@ -247,10 +250,13 @@ if java -cp bin scheduler.Main "[$WORKER_LIST]"; then
         echo "  Total word count: $TOTAL"
         echo ""
         echo "  Individual counts:"
-        for i in {1..5}; do
-            if [ -f count$i.txt ]; then
-                COUNT=$(cat count$i.txt)
-                echo "    - part$i.txt: $COUNT words"
+        # Display results for all generated count files
+        for count_file in count*.txt; do
+            if [ -f "$count_file" ]; then
+                COUNT=$(cat "$count_file")
+                # Extract number from count file name
+                PART_NUM=$(echo "$count_file" | sed 's/count\([0-9]*\).txt/\1/')
+                echo "    - part${PART_NUM}.txt: $COUNT words"
             fi
         done
     fi
