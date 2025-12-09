@@ -7,38 +7,67 @@ echo "║   Nodes distributed across multiple Grid5000 sites      ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if running in Grid5000 environment
-if [ -z "$OAR_NODEFILE" ]; then
-    echo "❌ Error: OAR_NODEFILE not found"
+# Check for nodefile (either from argument or environment)
+if [ -n "$1" ] && [ -f "$1" ]; then
+    echo "📄 Using nodefile from argument: $1"
+    OAR_NODEFILE="$1"
+elif [ -z "$OAR_NODEFILE" ]; then
+    echo "❌ Error: No nodefile provided"
+    echo ""
+    echo "Usage:"
+    echo "  $0 [combined_nodefile]"
     echo ""
     echo "For multi-site deployment on Grid5000:"
     echo ""
-    echo "1. Reserve nodes on multiple sites using oargridsub:"
-    echo "   oargridsub -w 1:00:00 nancy:rdef=\"/nodes=2\",lyon:rdef=\"/nodes=2\""
+    echo "Option 1: Use the helper script"
+    echo "   bash deploy/setup_multisite.sh"
     echo ""
-    echo "2. Or manually reserve on each site and combine nodefiles:"
-    echo "   # On site 1:"
-    echo "   oarsub -I -l nodes=2"
-    echo "   # On site 2:"
-    echo "   oarsub -I -l nodes=2"
-    echo "   # Then combine OAR_NODEFILE from both"
+    echo "Option 2: Manually combine nodefiles"
+    echo "   # Reserve on site 1:"
+    echo "   ssh grenoble && oarsub -I -l nodes=2,walltime=1:00:00"
+    echo "   cat \$OAR_NODEFILE | uniq > ~/nodes_grenoble.txt"
     echo ""
-    echo "Usage: bash deploy/run_multi_site.sh [input_file]"
+    echo "   # Reserve on site 2:"
+    echo "   ssh lyon && oarsub -I -l nodes=2,walltime=1:00:00"
+    echo "   cat \$OAR_NODEFILE | uniq > ~/nodes_lyon.txt"
+    echo "   scp ~/nodes_lyon.txt grenoble_master:~/"
+    echo ""
+    echo "   # On grenoble master:"
+    echo "   cat ~/nodes_grenoble.txt ~/nodes_lyon.txt > ~/combined_nodes.txt"
+    echo "   export OAR_NODEFILE=~/combined_nodes.txt"
+    echo "   bash deploy/run_multi_site.sh"
+    echo ""
+    exit 1
+elif [ ! -f "$OAR_NODEFILE" ]; then
+    echo "❌ Error: Nodefile not found: $OAR_NODEFILE"
     exit 1
 fi
 
-# Check if necessary files exist
-if [ ! -d "bin" ]; then
-    echo "❌ Error: bin directory not found. Compiling Java code..."
-    javac -d bin src/config/*.java src/cluster/*.java src/utils/*.java \
-          src/parser/*.java src/network/worker/*.java \
-          src/network/master/*.java src/scheduler/*.java
-fi
+echo "📋 Using nodefile: $OAR_NODEFILE"
+echo ""
 
-if [ ! -f "wordcount" ]; then
-    echo "⚠️  Warning: wordcount binary not found. Compiling..."
-    gcc -o wordcount test/wordcount.c
+# ==================== COMPILE JAVA CODE ====================
+
+echo "🔨 Compiling Java code..."
+javac -d bin src/config/*.java src/cluster/*.java src/utils/*.java \
+      src/parser/*.java src/network/worker/*.java \
+      src/network/master/*.java src/scheduler/*.java
+
+if [ $? -eq 0 ]; then
+    echo "✅ Java compilation successful"
+else
+    echo "❌ Java compilation failed"
+    exit 1
 fi
+echo ""
+
+# Compile wordcount binary
+if [ ! -f "wordcount" ] || [ "test/wordcount.c" -nt "wordcount" ]; then
+    echo "🔨 Compiling wordcount binary..."
+    gcc -o wordcount test/wordcount.c
+    echo "✅ Wordcount compiled"
+fi
+echo ""
 
 # Get node information
 HOSTNAMES=$(uniq $OAR_NODEFILE)
@@ -111,84 +140,63 @@ echo "  - RMI communication may require specific network configuration"
 echo "  - Latency between sites: typically 1-10ms depending on sites"
 echo ""
 
-# ==================== PREPARE INPUT FILE ====================
+# ==================== COMPRESSION & TRANSFER ====================
 
-echo "📝 Preparing input file..."
+echo "📦 Preparing files for multi-site transfer with compression..."
 
-# Check if user provided input file
-if [ -z "$1" ]; then
-    echo "No input file provided, creating test file..."
-    cat > test_input.txt << 'EOF'
-Test SCP multi-site avec division dynamique du fichier.
-Système distribué de comptage de mots sur Grid5000.
-Java RMI pour communication entre les nœuds.
-Makefile parsing et gestion des dépendances.
-Architecture distribuée avec workers multiples sur plusieurs sites.
-Grenoble Lyon Nancy Lille Rennes Sophia infrastructure de recherche.
-Communication inter-sites pour calcul distribué à grande échelle.
-EOF
-    INPUT_FILE="test_input.txt"
-else
-    INPUT_FILE="$1"
-    if [ ! -f "$INPUT_FILE" ]; then
-        echo "❌ Error: Input file not found: $INPUT_FILE"
-        exit 1
-    fi
-fi
+# Create temporary archive with all necessary files
+ARCHIVE_NAME="wordcount_deployment.tar.gz"
+echo "  🗜️  Compressing files (bin/, wordcount, test/, Makefile)..."
 
-echo "✅ Using input file: $INPUT_FILE"
+# Get sizes before compression
+BIN_SIZE=$(du -sb bin 2>/dev/null | awk '{print $1}')
+TOTAL_SIZE_BEFORE=$BIN_SIZE
+
+tar -czf $ARCHIVE_NAME bin wordcount test part*.txt Makefile 2>/dev/null || \
+    tar -czf $ARCHIVE_NAME bin wordcount test Makefile 2>/dev/null
+
+ARCHIVE_SIZE=$(stat -f%z "$ARCHIVE_NAME" 2>/dev/null || stat -c%s "$ARCHIVE_NAME" 2>/dev/null)
+COMPRESSION_RATIO=$(awk "BEGIN {printf \"%.1f\", ($TOTAL_SIZE_BEFORE / $ARCHIVE_SIZE)}")
+
+echo "  📊 Compression stats:"
+echo "      Original: $(numfmt --to=iec $TOTAL_SIZE_BEFORE 2>/dev/null || echo "$TOTAL_SIZE_BEFORE bytes")"
+echo "      Compressed: $(numfmt --to=iec $ARCHIVE_SIZE 2>/dev/null || echo "$ARCHIVE_SIZE bytes")"
+echo "      Ratio: ${COMPRESSION_RATIO}x"
 echo ""
 
-# ==================== GENERATE MAKEFILE AND SPLIT FILE ====================
+# Transfer compressed archive to all worker nodes
+echo "🚀 Transferring compressed archive to worker nodes..."
+TRANSFER_START=$(date +%s)
 
-echo "🔧 Generating Makefile and splitting input file..."
-echo "   This will create part*.txt files and Makefile.generated"
-
-# Build ALL_NODES list (including master for Java processing)
-ALL_NODES_LIST=$(echo "$HOSTNAMES" | awk '{printf "\"%s\",", $0}' | sed 's/,$//')
-
-# Run Main.java in dynamic mode to generate Makefile and split files
-# This runs on master and creates part*.txt and Makefile.generated locally
-if java -cp bin scheduler.Main "$INPUT_FILE" "[$ALL_NODES_LIST]"; then
-    echo "✅ Makefile generated and files split"
-
-    # Check that Makefile.generated was created
-    if [ ! -f "Makefile.generated" ]; then
-        echo "❌ Error: Makefile.generated was not created"
-        exit 1
-    fi
-
-    # Check that split files were created
-    SPLIT_COUNT=$(ls -1 part*.txt 2>/dev/null | wc -l)
-    if [ $SPLIT_COUNT -eq 0 ]; then
-        echo "❌ Error: No part*.txt files were created"
-        exit 1
-    fi
-
-    echo "   - Generated $SPLIT_COUNT split files"
-    echo "   - Generated Makefile.generated"
-else
-    echo "❌ Error: Failed to generate Makefile and split files"
-    exit 1
-fi
-
-echo ""
-
-# Copy files to all worker nodes
-echo "📦 Copying files to worker nodes (this may take longer for remote sites)..."
 for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         SITE=$(echo $hostname | cut -d'.' -f2)
-        echo "  - [$SITE] Copying to $hostname..."
-        # Copy: bin/, wordcount, test/, split files, and generated Makefile
-        if ! scp -q -r bin wordcount test part*.txt Makefile.generated $hostname:~ ; then
-            echo "❌ Failed to copy files to $hostname"
+        echo "  - [$SITE] Transferring to $hostname..."
+
+        if ! scp -q -C $ARCHIVE_NAME $hostname:~ ; then
+            echo "❌ Failed to transfer to $hostname"
             echo "   Check network connectivity and SSH access"
+            rm -f $ARCHIVE_NAME
             exit 1
         fi
+
+        # Extract on remote node
+        echo "  - [$SITE] Extracting on $hostname..."
+        ssh $hostname "tar -xzf ~/$ARCHIVE_NAME -C ~ && rm ~/$ARCHIVE_NAME" &
     fi
 done
-echo "✅ Files copied to all sites"
+
+# Wait for all extractions to complete
+wait
+
+TRANSFER_END=$(date +%s)
+TRANSFER_DURATION=$((TRANSFER_END - TRANSFER_START))
+
+echo "✅ Files transferred and extracted on all sites in ${TRANSFER_DURATION}s"
+echo "   (Compression saved ~$(awk "BEGIN {printf \"%.0f\", ($TOTAL_SIZE_BEFORE - $ARCHIVE_SIZE) * $(echo $HOSTNAMES | wc -w)}") bytes total)"
+
+# Cleanup local archive
+rm -f $ARCHIVE_NAME
 echo ""
 
 # Start workers
