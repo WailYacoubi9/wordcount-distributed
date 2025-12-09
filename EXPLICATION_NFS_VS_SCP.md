@@ -6,11 +6,32 @@ Pour le projet de système distribué de comptage de mots, nous avons initialeme
 
 ---
 
-## ❌ Pourquoi NFS n'est pas utilisable dans notre contexte
+## 🗂️ Deux approches NFS : Quelle est la différence ?
 
-### 1. Nécessité de privilèges sudo/root
+### Approche 1 : Répertoire partagé (implémentée dans notre code)
 
-L'installation et la configuration d'un serveur NFS **nécessitent obligatoirement des privilèges administrateur (sudo/root)** :
+Cette approche utilise un **simple répertoire partagé** accessible par tous les nœuds :
+
+```bash
+# Créer un répertoire partagé - PAS besoin de sudo !
+mkdir -p /tmp/wordcount_shared
+# OU sur Grid5000 (home partagé entre nœuds)
+mkdir -p $HOME/wordcount_shared
+```
+
+**Comment ça fonctionne** :
+- Les fichiers sont copiés vers ce répertoire avec `cp`
+- Tous les workers y accèdent directement (si accessible)
+- Simple, mais nécessite que tous les nœuds voient le même système de fichiers
+
+**Sur Grid5000** :
+- ✅ Le home directory (`$HOME`) est automatiquement partagé entre nœuds du même site
+- ✅ Pas besoin de configuration spéciale
+- ❌ Ne fonctionne que mono-site (pas entre Nancy et Lyon par exemple)
+
+### Approche 2 : Vrai serveur NFS (non implémentée - nécessite sudo)
+
+Cette approche installerait un **vrai serveur NFS** avec montage réseau :
 
 ```bash
 # Ces commandes nécessitent sudo - IMPOSSIBLE sans droits administrateur
@@ -20,16 +41,7 @@ sudo exportfs -ra                          # Redémarrage du service
 sudo systemctl start nfs-server            # Démarrage du serveur
 ```
 
-### 2. Incompatibilité avec l'environnement Grid5000
-
-Sur la plateforme Grid5000 utilisée pour les tests :
-- Les utilisateurs **n'ont PAS de droits sudo** sur les nœuds de calcul
-- Les nœuds sont des machines partagées avec restrictions de sécurité
-- Même avec une réservation OAR, les privilèges restent limités à l'utilisateur
-
-### 3. Problèmes techniques supplémentaires
-
-Même si nous avions les droits sudo, NFS poserait d'autres problèmes :
+**Problèmes avec cette approche** :
 
 | Problème | Impact |
 |----------|---------|
@@ -38,6 +50,10 @@ Même si nous avions les droits sudo, NFS poserait d'autres problèmes :
 | **Services système** | Nécessite démarrage de `rpcbind`, `nfs-server` - impossible sans sudo |
 | **Permissions** | Nécessite configuration `no_root_squash` - risque de sécurité |
 | **Persistance** | Configuration perdue à la fin de la réservation OAR |
+
+**Sur Grid5000** :
+- ❌ Les utilisateurs n'ont PAS de droits sudo
+- ❌ Impossible d'installer ou configurer un serveur NFS
 
 ---
 
@@ -86,9 +102,40 @@ Pour un système de comptage de mots, le temps de calcul domine largement le tem
 
 ---
 
-## 🔧 Notre implémentation
+## 🔧 Notre implémentation : Support de 3 méthodes
 
-### Architecture avec SCP
+Notre code implémente **trois approches de transfert de fichiers** pour comparaison :
+
+### 1. Mode SCP (par défaut - recommandé)
+
+```bash
+java -cp bin scheduler.Main "[node1,node2,node3]" --method=SCP
+```
+
+- Transfert explicite via SSH
+- Fonctionne partout (local, mono-site, multi-site)
+- Nécessite clés SSH configurées
+
+### 2. Mode NFS via répertoire partagé (mono-site uniquement)
+
+```bash
+# Sur Grid5000, utiliser le home partagé
+java -cp bin scheduler.Main "[node1,node2,node3]" --method=NFS
+
+# Le code utilise : $HOME/wordcount_shared
+# Tous les nœuds voient ce répertoire (mono-site)
+```
+
+- Utilise le home directory partagé de Grid5000
+- Plus rapide que SCP (pas de transfert réseau)
+- ❌ Ne fonctionne que mono-site (pas entre Nancy ↔ Lyon)
+- ✅ Pas besoin de sudo (juste `mkdir`)
+
+### 3. Vrai serveur NFS (non implémenté - nécessite sudo)
+
+Cette option nécessiterait l'installation d'un serveur NFS avec montage réseau, ce qui est **impossible sans sudo** sur Grid5000.
+
+### Architecture avec SCP (approche par défaut)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -168,12 +215,31 @@ Pour Grid5000 mono-site (même site) :
 4. **Compatibilité** : Fonctionne partout (local, Grid5000, multi-site)
 5. **Performance** : Différence négligeable pour notre cas d'usage
 
-### Alternative NFS envisagée
+### Les 3 méthodes implémentées
 
-Nous avons quand même implémenté le support NFS dans le code (architecture modulaire) :
-- Interface `FileTransferMethod` avec deux implémentations : `SCP` et `NFS`
-- Le code peut utiliser NFS si un système de fichiers partagé est disponible
-- Utile pour comparer les performances dans un environnement qui le permet
+Notre code offre une **architecture modulaire** avec 3 approches :
+
+1. **SCP** (défaut) - Fonctionne partout, mono et multi-site
+2. **Répertoire partagé (mode "NFS")** - Rapide en mono-site, utilise `$HOME` partagé
+3. **Vrai serveur NFS** - Non implémenté (nécessite sudo)
+
+Vous pouvez choisir la méthode avec `--method=SCP` ou `--method=NFS` :
+
+```bash
+# Utiliser SCP (par défaut, recommandé)
+./deploy/run_mono_site.sh --method=SCP
+
+# Utiliser le répertoire partagé (mono-site uniquement)
+./deploy/run_mono_site.sh --method=NFS
+
+# Benchmarking : comparer les deux approches
+./scripts/run_benchmarks.sh --workers "[node1,node2]" --runs 5
+```
+
+**Pourquoi avoir implémenté les deux ?**
+- Démontre une compréhension des différentes approches
+- Permet de mesurer et comparer les performances
+- Montre une architecture flexible et modulaire
 
 ### Ce qui a été testé et validé
 
@@ -205,10 +271,34 @@ Nous avons quand même implémenté le support NFS dans le code (architecture mo
 
 ### Q : "NFS aurait été plus rapide, non ?"
 
-**R :** Oui, potentiellement 2-3 secondes plus rapide pour notre workload. Mais :
-1. C'est techniquement impossible sans sudo
-2. La différence est négligeable (~30% sur 10 secondes)
-3. Le temps de calcul (wordcount) domine le temps de transfert
+**R :** Oui ! Et c'est pour ça qu'on l'a **implémenté aussi** :
+1. **Mode "NFS" via répertoire partagé** - Utilise `$HOME` partagé sur Grid5000
+2. **Fonctionne en mono-site** - Tous les nœuds du même site voient le même `$HOME`
+3. **Pas besoin de sudo** - Juste `mkdir -p $HOME/wordcount_shared`
+4. **Plus rapide que SCP** - Pas de transfert réseau
+
+**MAIS** :
+- Ne fonctionne que mono-site (pas entre Nancy ↔ Lyon)
+- Un vrai serveur NFS avec montage réseau nécessiterait sudo
+- SCP reste la solution universelle (mono + multi-site)
+
+### Q : "Si vous avez implémenté le mode NFS (répertoire partagé), pourquoi utiliser SCP par défaut ?"
+
+**R :** Excellente question ! SCP est le choix par défaut pour plusieurs raisons :
+
+1. **Universalité** : Fonctionne en mono-site ET multi-site
+2. **Fiabilité** : Le mode NFS nécessite que `$HOME` soit partagé (vrai mono-site, faux multi-site)
+3. **Simplicité** : Pas besoin de vérifier si les nœuds partagent le même filesystem
+4. **Pédagogie** : Démontre la gestion de transferts explicites
+
+**Mais le mode NFS est disponible** :
+```bash
+# Mono-site avec répertoire partagé (plus rapide)
+java -cp bin scheduler.Main "[node1,node2]" --method=NFS
+
+# Multi-site (seul SCP fonctionne)
+java -cp bin scheduler.Main "[nancy:node1,lyon:node2]" --method=SCP
+```
 
 ### Q : "Vous auriez pu utiliser SSHFS ou autre ?"
 
