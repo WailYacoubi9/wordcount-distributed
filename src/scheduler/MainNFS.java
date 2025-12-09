@@ -202,9 +202,13 @@ public class MainNFS {
     private static void generateMakefileNFS(String makefilePath, List<String> splitFiles, String nfsPath) throws Exception {
         PrintWriter writer = new PrintWriter(new FileWriter(makefilePath));
 
+        // Get absolute path to project directory
+        String projectDir = System.getProperty("user.home") + "/wordcount-distributed";
+        String wordcountSource = projectDir + "/test/wordcount.c";
+
         // Generate wordcount binary target (in NFS directory)
-        writer.println("wordcount: test/wordcount.c");
-        writer.println("\tgcc -o " + nfsPath + "/wordcount test/wordcount.c");
+        writer.println("wordcount: " + wordcountSource);
+        writer.println("\tgcc -o " + nfsPath + "/wordcount " + wordcountSource);
         writer.println();
 
         // Generate count targets for each split file (all in NFS)
