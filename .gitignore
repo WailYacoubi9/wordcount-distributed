@@ -35,6 +35,11 @@ test_*.txt
 wordcount
 *.log
 
+# Benchmark files
+benchmarks/
+*.csv
+benchmark_report.txt
+
 # OS files
 .DS_Store
 Thumbs.db

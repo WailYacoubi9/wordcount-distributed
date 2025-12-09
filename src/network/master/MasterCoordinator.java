@@ -1,13 +1,17 @@
 package network.master;
 
+import benchmark.BenchmarkManager;
 import config.Configuration;
+import config.FileTransferMethod;
 import network.worker.WorkerInterface;
 
+import java.io.File;
 import java.rmi.Naming;
 
 /**
  * Coordinates task execution on worker nodes via RMI.
  * Refactored to remove circular dependencies.
+ * Supports both NFS and SCP file transfer methods with benchmarking.
  */
 public class MasterCoordinator {
 
@@ -32,16 +36,39 @@ public class MasterCoordinator {
             return -1;
         }
 
+        long taskStartTime = System.currentTimeMillis();
+
         try {
             System.out.println("[MASTER] Connecting to worker: " + workerHost + ":" + workerPort);
             String workerUrl = Configuration.buildRmiUrl(workerHost, workerPort);
             WorkerInterface worker = (WorkerInterface) Naming.lookup(workerUrl);
 
             System.out.println("[MASTER] Executing on " + workerHost + ":" + workerPort + ": " + command);
+            long cmdStartTime = System.currentTimeMillis();
             int exitCode = worker.executeCommand(command);
+            long cmdDuration = System.currentTimeMillis() - cmdStartTime;
+
+            // Record command execution time
+            if (Configuration.isBenchmarkingEnabled()) {
+                try {
+                    BenchmarkManager.getInstance().recordCommandExecution(taskName, cmdDuration);
+                } catch (IllegalStateException e) {
+                    // BenchmarkManager not initialized, skip recording
+                }
+            }
 
             if (exitCode == 0 && taskName != null) {
                 retrieveResults(taskName, workerHost, masterHostname);
+            }
+
+            // Record total task time
+            if (Configuration.isBenchmarkingEnabled()) {
+                try {
+                    long totalDuration = System.currentTimeMillis() - taskStartTime;
+                    BenchmarkManager.getInstance().recordTotalTask(taskName, totalDuration);
+                } catch (IllegalStateException e) {
+                    // BenchmarkManager not initialized, skip recording
+                }
             }
 
             return exitCode;
@@ -68,7 +95,7 @@ public class MasterCoordinator {
     }
 
     /**
-     * Transfers a file between hosts using scp.
+     * Transfers a file between hosts using configured method (NFS or SCP).
      * Skips transfer if source and destination are both localhost.
      */
     private static void transferFile(String sourceHost, String destHost, String filename) {
@@ -86,19 +113,98 @@ public class MasterCoordinator {
             return;
         }
 
+        long startTime = System.currentTimeMillis();
+        long fileSize = getFileSize(filename);
+        FileTransferMethod method = Configuration.getFileTransferMethod();
+
+        try {
+            boolean success = false;
+
+            switch (method) {
+                case NFS:
+                    success = transferFileNFS(sourceHost, destHost, filename);
+                    break;
+                case SCP:
+                    success = transferFileSCP(sourceHost, destHost, filename);
+                    break;
+            }
+
+            long duration = System.currentTimeMillis() - startTime;
+
+            // Record file transfer time
+            if (Configuration.isBenchmarkingEnabled()) {
+                try {
+                    BenchmarkManager.getInstance().recordFileTransfer(filename, duration, filename, fileSize);
+                } catch (IllegalStateException e) {
+                    // BenchmarkManager not initialized, skip recording
+                }
+            }
+
+            if (success) {
+                System.out.println("[MASTER] ✅ File transferred (" + method + "): " + filename + " in " + duration + " ms");
+            } else {
+                System.err.println("[MASTER] ❌ File transfer failed (" + method + "): " + filename);
+            }
+
+        } catch (Exception e) {
+            System.err.println("[MASTER] Error transferring file " + filename + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Transfers a file using SCP.
+     */
+    private static boolean transferFileSCP(String sourceHost, String destHost, String filename) {
         try {
             String command = "scp " + sourceHost + ":" + filename + " " + destHost + ":~";
             Process process = Runtime.getRuntime().exec(command);
             int exitCode = process.waitFor();
+            return exitCode == 0;
+        } catch (Exception e) {
+            System.err.println("[MASTER] SCP error: " + e.getMessage());
+            return false;
+        }
+    }
 
-            if (exitCode == 0) {
-                System.out.println("[MASTER] ✅ File transferred: " + filename);
+    /**
+     * Transfers a file using NFS (assumes shared filesystem).
+     * In NFS mode, files are accessed directly via shared mount point.
+     */
+    private static boolean transferFileNFS(String sourceHost, String destHost, String filename) {
+        try {
+            String sharedPath = Configuration.getNfsSharedPath();
+            File sourceFile = new File(sharedPath, filename);
+
+            // In NFS, we just verify the file exists in the shared location
+            if (sourceFile.exists()) {
+                // File is already accessible via NFS
+                return true;
             } else {
-                System.err.println("[MASTER] ❌ File transfer failed: " + filename);
+                // Need to copy to shared location
+                String command = "cp " + filename + " " + sharedPath + "/";
+                Process process = Runtime.getRuntime().exec(command);
+                int exitCode = process.waitFor();
+                return exitCode == 0;
             }
         } catch (Exception e) {
-            System.err.println("[MASTER] Error transferring file " + filename + ": " + e.getMessage());
+            System.err.println("[MASTER] NFS error: " + e.getMessage());
+            return false;
         }
+    }
+
+    /**
+     * Gets the size of a file in bytes.
+     */
+    private static long getFileSize(String filename) {
+        try {
+            File file = new File(filename);
+            if (file.exists()) {
+                return file.length();
+            }
+        } catch (Exception e) {
+            // Ignore errors, return 0
+        }
+        return 0;
     }
 
     /**

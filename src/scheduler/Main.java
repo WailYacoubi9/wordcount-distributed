@@ -1,5 +1,8 @@
 package scheduler;
 
+import benchmark.BenchmarkManager;
+import config.Configuration;
+import config.FileTransferMethod;
 import parser.MakefileParser;
 import parser.Task;
 import parser.TaskStatus;
@@ -13,6 +16,7 @@ import java.util.Set;
 /**
  * Main entry point for the distributed word count system.
  * Refactored with proper dependency injection and error handling.
+ * Supports benchmarking and comparison of file transfer methods.
  */
 public class Main {
     public static void main(String[] args) {
@@ -21,10 +25,40 @@ public class Main {
         System.out.println("╚══════════════════════════════════════════════════════════╝\n");
 
         if (args.length < 1) {
-            System.err.println("Usage: java scheduler.Main \"[worker1,worker2,...]\"");
-            System.err.println("Example: java scheduler.Main \"[nancy-2.grid5000.fr,nancy-3.grid5000.fr]\"");
-            System.err.println("Local test: java scheduler.Main \"[localhost]\"");
+            System.err.println("Usage: java scheduler.Main \"[worker1,worker2,...]\" [--method=SCP|NFS] [--benchmark] [--output-dir=<dir>]");
+            System.err.println("Example: java scheduler.Main \"[nancy-2.grid5000.fr,nancy-3.grid5000.fr]\" --method=NFS --benchmark");
+            System.err.println("Local test: java scheduler.Main \"[localhost]\" --method=SCP");
+            System.err.println("Benchmark: java scheduler.Main \"[localhost]\" --method=SCP --benchmark --output-dir=benchmarks/scp");
             System.exit(1);
+        }
+
+        // Parse command line arguments
+        String workersArg = args[0];
+        FileTransferMethod method = FileTransferMethod.SCP; // default
+        boolean enableBenchmark = false;
+        String outputDir = "benchmarks";
+
+        for (int i = 1; i < args.length; i++) {
+            String arg = args[i];
+            if (arg.startsWith("--method=")) {
+                String methodStr = arg.substring("--method=".length());
+                method = FileTransferMethod.fromString(methodStr);
+            } else if (arg.equals("--benchmark")) {
+                enableBenchmark = true;
+            } else if (arg.startsWith("--output-dir=")) {
+                outputDir = arg.substring("--output-dir=".length());
+            }
+        }
+
+        // Configure system
+        Configuration.setFileTransferMethod(method);
+        Configuration.setBenchmarkingEnabled(enableBenchmark);
+        Configuration.setBenchmarkOutputDir(outputDir);
+
+        // Initialize benchmarking if enabled
+        if (enableBenchmark) {
+            BenchmarkManager.initialize(method, outputDir);
+            System.out.println("[MAIN] Benchmarking enabled, output to: " + outputDir);
         }
 
         try {
@@ -77,6 +111,13 @@ public class Main {
             scheduler.executeTasks();
 
             System.out.println("\n[MAIN] ✅ Distributed execution completed successfully!");
+
+            // Export benchmark results if enabled
+            if (enableBenchmark) {
+                System.out.println("\n[MAIN] Exporting benchmark results...");
+                BenchmarkManager.getInstance().printSummary();
+                BenchmarkManager.getInstance().exportMetrics();
+            }
 
         } catch (IllegalArgumentException e) {
             System.err.println("\n[MAIN] ❌ Configuration error: " + e.getMessage());
