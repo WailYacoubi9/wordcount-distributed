@@ -45,7 +45,8 @@ public class ClusterManager {
 
         if (tempNodes.size() < Configuration.MIN_WORKER_NODES) {
             throw new IllegalArgumentException(
-                String.format("At least %d worker node(s) required", Configuration.MIN_WORKER_NODES)
+                String.format("At least %d total nodes required (1 master + %d worker(s))",
+                    Configuration.MIN_WORKER_NODES, Configuration.MIN_WORKER_NODES - 1)
             );
         }
 
@@ -55,10 +56,19 @@ public class ClusterManager {
             );
         }
 
-        this.nodes = Collections.synchronizedList(tempNodes);
+        // First node is the MASTER (coordination only)
         this.masterNode = tempNodes.get(0);
-        System.out.println("[CLUSTER] Master node: " + masterNode.hostname);
-        System.out.println("[CLUSTER] ✅ Cluster initialized with " + tempNodes.size() + " worker(s)\n");
+
+        // Remaining nodes are WORKERS (excluding master)
+        List<ComputeNode> workerNodes = new ArrayList<>(tempNodes.subList(1, tempNodes.size()));
+        this.nodes = Collections.synchronizedList(workerNodes);
+
+        System.out.println("[CLUSTER] Master node: " + masterNode.hostname + " (coordination only)");
+        System.out.println("[CLUSTER] Worker nodes: " + workerNodes.size());
+        for (ComputeNode worker : workerNodes) {
+            System.out.println("[CLUSTER]   - " + worker.hostname + ":" + worker.port);
+        }
+        System.out.println("[CLUSTER] ✅ Cluster initialized: 1 master + " + workerNodes.size() + " worker(s)\n");
     }
 
     /**
