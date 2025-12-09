@@ -58,6 +58,22 @@ WORKER_LIST="${WORKER_LIST}]"
 echo -e "${GREEN}📋 Node list (master + workers): $WORKER_LIST${NC}"
 echo ""
 
+# ==================== COMPILE JAVA CODE ====================
+
+echo -e "${BLUE}🔨 Compiling Java code...${NC}"
+cd $PROJECT_DIR
+javac -d bin src/config/*.java src/cluster/*.java src/utils/*.java \
+      src/parser/*.java src/network/worker/*.java \
+      src/network/master/*.java src/scheduler/*.java
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Java compilation successful${NC}"
+else
+    echo -e "${RED}❌ Java compilation failed${NC}"
+    exit 1
+fi
+echo ""
+
 # ==================== NFS SETUP (No sudo!) ====================
 
 echo -e "${BLUE}📁 Setting up NFS shared directory in HOME...${NC}"
