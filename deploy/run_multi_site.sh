@@ -25,16 +25,28 @@ if [ -z "$OAR_NODEFILE" ]; then
     exit 1
 fi
 
-# Check if necessary files exist
-if [ ! -d "bin" ]; then
-    echo "❌ Error: bin directory not found. Please run deploy/setup.sh first"
+# ==================== COMPILE JAVA CODE ====================
+
+echo "🔨 Compiling Java code..."
+javac -d bin src/config/*.java src/cluster/*.java src/utils/*.java \
+      src/parser/*.java src/network/worker/*.java \
+      src/network/master/*.java src/scheduler/*.java
+
+if [ $? -eq 0 ]; then
+    echo "✅ Java compilation successful"
+else
+    echo "❌ Java compilation failed"
     exit 1
 fi
+echo ""
 
-if [ ! -f "wordcount" ]; then
-    echo "⚠️  Warning: wordcount binary not found. Compiling..."
+# Compile wordcount binary
+if [ ! -f "wordcount" ] || [ "test/wordcount.c" -nt "wordcount" ]; then
+    echo "🔨 Compiling wordcount binary..."
     gcc -o wordcount test/wordcount.c
+    echo "✅ Wordcount compiled"
 fi
+echo ""
 
 # Get node information
 HOSTNAMES=$(uniq $OAR_NODEFILE)
@@ -107,21 +119,63 @@ echo "  - RMI communication may require specific network configuration"
 echo "  - Latency between sites: typically 1-10ms depending on sites"
 echo ""
 
-# Copy files to all worker nodes
-echo "📦 Copying files to worker nodes (this may take longer for remote sites)..."
+# ==================== COMPRESSION & TRANSFER ====================
+
+echo "📦 Preparing files for multi-site transfer with compression..."
+
+# Create temporary archive with all necessary files
+ARCHIVE_NAME="wordcount_deployment.tar.gz"
+echo "  🗜️  Compressing files (bin/, wordcount, test/, Makefile)..."
+
+# Get sizes before compression
+BIN_SIZE=$(du -sb bin 2>/dev/null | awk '{print $1}')
+TOTAL_SIZE_BEFORE=$BIN_SIZE
+
+tar -czf $ARCHIVE_NAME bin wordcount test part*.txt Makefile 2>/dev/null || \
+    tar -czf $ARCHIVE_NAME bin wordcount test Makefile 2>/dev/null
+
+ARCHIVE_SIZE=$(stat -f%z "$ARCHIVE_NAME" 2>/dev/null || stat -c%s "$ARCHIVE_NAME" 2>/dev/null)
+COMPRESSION_RATIO=$(awk "BEGIN {printf \"%.1f\", ($TOTAL_SIZE_BEFORE / $ARCHIVE_SIZE)}")
+
+echo "  📊 Compression stats:"
+echo "      Original: $(numfmt --to=iec $TOTAL_SIZE_BEFORE 2>/dev/null || echo "$TOTAL_SIZE_BEFORE bytes")"
+echo "      Compressed: $(numfmt --to=iec $ARCHIVE_SIZE 2>/dev/null || echo "$ARCHIVE_SIZE bytes")"
+echo "      Ratio: ${COMPRESSION_RATIO}x"
+echo ""
+
+# Transfer compressed archive to all worker nodes
+echo "🚀 Transferring compressed archive to worker nodes..."
+TRANSFER_START=$(date +%s)
+
 for hostname in $HOSTNAMES; do
     if [ "$hostname" != "$MASTER_NODE" ]; then
         SITE=$(echo $hostname | cut -d'.' -f2)
-        echo "  - [$SITE] Copying to $hostname..."
-        # Copy all necessary files: bin/, wordcount binary, test/, input files, and Makefile
-        if ! scp -q -r bin wordcount test part*.txt Makefile $hostname:~ ; then
-            echo "❌ Failed to copy files to $hostname"
+        echo "  - [$SITE] Transferring to $hostname..."
+
+        if ! scp -q -C $ARCHIVE_NAME $hostname:~ ; then
+            echo "❌ Failed to transfer to $hostname"
             echo "   Check network connectivity and SSH access"
+            rm -f $ARCHIVE_NAME
             exit 1
         fi
+
+        # Extract on remote node
+        echo "  - [$SITE] Extracting on $hostname..."
+        ssh $hostname "tar -xzf ~/$ARCHIVE_NAME -C ~ && rm ~/$ARCHIVE_NAME" &
     fi
 done
-echo "✅ Files copied to all sites"
+
+# Wait for all extractions to complete
+wait
+
+TRANSFER_END=$(date +%s)
+TRANSFER_DURATION=$((TRANSFER_END - TRANSFER_START))
+
+echo "✅ Files transferred and extracted on all sites in ${TRANSFER_DURATION}s"
+echo "   (Compression saved ~$(awk "BEGIN {printf \"%.0f\", ($TOTAL_SIZE_BEFORE - $ARCHIVE_SIZE) * $(echo $HOSTNAMES | wc -w)}") bytes total)"
+
+# Cleanup local archive
+rm -f $ARCHIVE_NAME
 echo ""
 
 # Start workers
