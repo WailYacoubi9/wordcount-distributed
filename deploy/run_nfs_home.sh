@@ -30,7 +30,8 @@ if [ -z "$OAR_NODEFILE" ]; then
     exit 1
 fi
 
-# Get master and worker nodes
+# Get all nodes (Java will separate master from workers)
+ALL_NODES=$(cat $OAR_NODEFILE | uniq)
 MASTER=$(head -n 1 $OAR_NODEFILE)
 WORKERS=$(tail -n +2 $OAR_NODEFILE | uniq)
 WORKER_COUNT=$(echo "$WORKERS" | wc -l)
@@ -40,20 +41,21 @@ echo -e "${BLUE}👷 Workers ($WORKER_COUNT):${NC}"
 echo "$WORKERS" | nl
 echo ""
 
-# Build worker list for Java
+# Build node list for Java (ALL nodes: master + workers)
+# Java ClusterManager will handle master/worker separation
 WORKER_LIST="["
 FIRST=true
-for worker in $WORKERS; do
+for node in $ALL_NODES; do
     if [ "$FIRST" = true ]; then
-        WORKER_LIST="${WORKER_LIST}${worker}:${PORT}"
+        WORKER_LIST="${WORKER_LIST}${node}:${PORT}"
         FIRST=false
     else
-        WORKER_LIST="${WORKER_LIST},${worker}:${PORT}"
+        WORKER_LIST="${WORKER_LIST},${node}:${PORT}"
     fi
 done
 WORKER_LIST="${WORKER_LIST}]"
 
-echo -e "${GREEN}📋 Worker list: $WORKER_LIST${NC}"
+echo -e "${GREEN}📋 Node list (master + workers): $WORKER_LIST${NC}"
 echo ""
 
 # ==================== NFS SETUP (No sudo!) ====================
@@ -114,10 +116,10 @@ echo ""
 
 echo -e "${BLUE}📦 Deploying workers...${NC}"
 
-# Copy compiled code to all workers
-for worker in $WORKERS; do
-    echo "  Copying to $worker..."
-    scp -q -r $PROJECT_DIR/bin $worker:~/
+# Copy compiled code to all nodes (including master for local execution)
+for node in $ALL_NODES; do
+    echo "  Copying to $node..."
+    scp -q -r $PROJECT_DIR/bin $node:~/
 done
 
 # Start worker nodes
