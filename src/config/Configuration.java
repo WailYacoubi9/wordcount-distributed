@@ -18,7 +18,9 @@ public class Configuration {
     public static final int TASK_RETRY_RANDOM_RANGE_MS = 100;
 
     // Validation
-    public static final int MIN_WORKER_NODES = 1;
+    // Note: These are TOTAL nodes (master + workers)
+    // Minimum 2 = 1 master + 1 worker
+    public static final int MIN_WORKER_NODES = 2;
     public static final int MAX_WORKER_NODES = 1000;
 
     private Configuration() {
